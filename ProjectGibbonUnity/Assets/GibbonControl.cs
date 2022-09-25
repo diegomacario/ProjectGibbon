@@ -559,7 +559,7 @@ public class GibbonControl : MonoBehaviour {
             var head_look_x = -math.sin(temp.y)*Mathf.Rad2Deg;
 
             // Apply head transform
-            display_body.head.transform.rotation = display_body.head.transform.rotation * Quaternion.Euler(head_look_x, 0f, 0f) * Quaternion.Euler(0f, head_look_y, 0f);
+            display_body.head.transform.rotation = display_body.head.transform.rotation * Quaternion.AngleAxis(head_look_x, new Vector3(1.0f, 0.0f, 0.0f)) * Quaternion.AngleAxis(head_look_y, new Vector3(0.0f, 1.0f, 0.0f));
             if(head_look_y > 0.0f){
                 display_body.head.transform.position = display_body.head.transform.position + (Vector3)((display_body.head.transform.right) * head_look_y * -0.001f);
             }
@@ -610,7 +610,16 @@ public class GibbonControl : MonoBehaviour {
         }
     }
     
-    float3 MoveTowards(float3 a, float3 b, float max_dist){
+    float MoveTowardsF(float a, float b, float max_dist){
+        float len = math.distance(a,b);
+        if(len < max_dist){
+            return b;
+        } else {
+            return a + (b-a)/len*max_dist;
+        }
+    }
+
+    float3 MoveTowardsVec(float3 a, float3 b, float max_dist){
         float len = math.distance(a,b);
         if(len < max_dist){
             return b;
@@ -656,7 +665,7 @@ public class GibbonControl : MonoBehaviour {
         
         // Don't allow speed < 1.0 m/s, don't need to worry about idle animations in an endless runner
         if(horz_input == 0f && math.abs(simple_vel[0]) < 1.0f){
-            simple_vel[0] = Mathf.MoveTowards(simple_vel[0], simple_vel[0]>=0.0f?1.0f:-1.0f, step);
+            simple_vel[0] = MoveTowardsF(simple_vel[0], simple_vel[0]>=0.0f?1.0f:-1.0f, step);
         }
 
         // Smooth out position on branch by checking height forwards and back
@@ -722,7 +731,7 @@ public class GibbonControl : MonoBehaviour {
             if(slope_vec[1] < -0.5f && math.abs(effective_vel[0]) > 3.0f){
                 target_skate_amount = 1.0f;
             }
-            skate_amount = Mathf.MoveTowards(skate_amount, target_skate_amount, step*3.0f);
+            skate_amount = MoveTowardsF(skate_amount, target_skate_amount, step*3.0f);
             if(debug_info.force_skate){
                 skate_amount = 1.0f;
             }
@@ -764,7 +773,7 @@ public class GibbonControl : MonoBehaviour {
 
                         // Move hand towards target
                         float pull_strength = gallop_amount * quad_amount * math.min(1.0f, math.abs(effective_vel[0]) * 0.2f);
-                        rig.points[i*2+1].pos = MoveTowards(rig.points[i*2+1].pos, walk.limb_targets[i], step * 0.5f * pull_strength * 4f);
+                        rig.points[i*2+1].pos = MoveTowardsVec(rig.points[i*2+1].pos, walk.limb_targets[i], step * 0.5f * pull_strength * 4f);
                     
                         if(debug_info.draw_hand_pull){
                             DebugDraw.Line(rig.points[i*2+1].pos, walk.limb_targets[i], new Color((i==0)?1f:0f,(i==0)?0f:1f,0f,pull_strength), DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray );
