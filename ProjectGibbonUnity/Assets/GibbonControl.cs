@@ -85,18 +85,6 @@ public class GibbonControl : MonoBehaviour {
             "Source Rigs",
             "Particle"
         };
-        int force_gait = 0;
-        string[] gaits = new string[] {
-            "Normal",
-            "Skate",
-            "Biped Run",
-            "Biped Gallop",
-            "Quadruped Gallop"
-        };
-        public bool force_skate = false;
-        public bool force_run = false;
-        public bool force_gallop = false;
-        public bool force_quad = false;
         public bool draw_hand_pull = false;
         public bool draw_trajectory = false;
         public bool draw_head_look = false;
@@ -112,12 +100,6 @@ public class GibbonControl : MonoBehaviour {
                     draw_display_simple_rig = (draw_layer==3);
                     draw_walk_rig = (draw_layer==4);
                     draw_simple_point = (draw_layer==5);
-                }
-                if(ImGui.Combo("Gait", ref force_gait, gaits)){
-                    force_skate = (force_gait==1);
-                    force_run = (force_gait==2);
-                    force_gallop = (force_gait==3);
-                    force_quad = (force_gait==4);
                 }
                 if(ImGui.Checkbox("Draw COM line", ref draw_com_line)){
                     if(!draw_com_line){
@@ -153,26 +135,13 @@ public class GibbonControl : MonoBehaviour {
     float3 look_target; // For head look IK
 
     float body_compress_amount = 0.0f; // Used to shorten the distance between neck and hips if necessary, e.g. during quadruped gallop
-    float skate_amount = 0.0f; // Used to interpolate into and out of sliding state
 
     // Various parameters that were being used to tune an animation
     float base_walk_height = 0.7f;
     float tilt_offset = 0.81f;
     float gallop_offset = 0.55f; // For biped gallop
     float quad_gallop_offset = 0.25f; // For quadruped gallop
-    float gallop_stride = 1.0f;
-    float gallop_stride_height = 0.2f;
-    float gallop_hip_rotate = -1.3f;
-    float gallop_height_offset = 0.6f;
-    float gallop_height = 0.012f;
-    float gallop_height_base = 0.8f;
-    float gallop_lean = 1.5f;
-    float gallop_arm_stride_height = 0.4f;
-    float gallop_arm_stride = 0.4f;
     float quad_amount = 0.0f;
-    float gallop_amount = 0.0f;
-    float quad_gallop_body_compress_offset = 0.4f;
-    float quad_gallop_body_compress_amount = 0.15f;
 
     void Start() {
         // Starting point
@@ -587,19 +556,7 @@ public class GibbonControl : MonoBehaviour {
         if(ImGui.Begin("Animation Tuning")){
             ImGui.TextWrapped("This is an example of a temporary UI window that could be used to tune animation parameters without having to recompile");
             ImGui.SliderFloat("gallop_offset", ref gallop_offset, -1f, 1f);
-            ImGui.SliderFloat("gallop_stride", ref gallop_stride, 0f, 0.85f);
-            ImGui.SliderFloat("gallop_height_offset", ref gallop_height_offset, 0f, 1f);
-            ImGui.SliderFloat("gallop_height", ref gallop_height, 0f, 1f);
-            ImGui.SliderFloat("gallop_height_base", ref gallop_height_base, 0f, 1f);
-            ImGui.SliderFloat("gallop_hip_rotate", ref gallop_hip_rotate, -4f, 4f);
-            ImGui.SliderFloat("gallop_lean", ref gallop_lean, -4f, 4f);
-            ImGui.SliderFloat("gallop_stride_height", ref gallop_stride_height, -1f, 1f);
-            ImGui.SliderFloat("gallop_arm_stride", ref gallop_arm_stride, 0f, 4f);
-            ImGui.SliderFloat("gallop_arm_stride_height", ref gallop_arm_stride_height, 0f, 1f);
             ImGui.SliderFloat("quad_amount", ref quad_amount, 0f, 1f);
-            ImGui.SliderFloat("quad_gallop_body_compress_amount", ref quad_gallop_body_compress_amount, 0f, 1f);
-            ImGui.SliderFloat("quad_gallop_body_compress_offset", ref quad_gallop_body_compress_offset, 0f, 1f);
-            ImGui.SliderFloat("gallop_amount", ref gallop_amount, 0f, 1f);
         }
         ImGui.End();
 
@@ -702,53 +659,24 @@ public class GibbonControl : MonoBehaviour {
 
         { // Run animation
             // Vary between different gaits based on speed and time
-            gallop_amount = math.clamp(math.abs(simple_vel[0]) / 4f + (math.sin(Time.time*0.7f)-1.0f) * 0.7f, 0.0f, 1.0f);
             quad_amount = math.clamp((math.sin(Time.time*2.3f)+math.sin(Time.time*1.7f)), 0.0f, 1.0f);
-
-            if(debug_info.force_run){
-                gallop_amount = 0.0f;
-            }
-            if(debug_info.force_gallop){
-                gallop_amount = 1.0f;
-                quad_amount = 0.0f;
-            }
-            if(debug_info.force_quad){
-                gallop_amount = 1.0f;
-                quad_amount = 1.0f;
-            }
 
             // Determine how far to lean forwards
             var walk_lean = math.sin(Time.time)*0.2f+0.3f;
-            var gallop_lean = math.sin(Time.time)*0.2f+0.8f + quad_amount * 0.07f * math.abs(effective_vel[0]);
-            var lean = math.lerp(walk_lean, gallop_lean, gallop_amount);
+            var lean = walk_lean;
 
             // Adjust stride frequency based on speed
             float speed_mult = 8f/(math.PI*2f) * math.pow((math.abs(effective_vel[0])+1.0f),0.4f);
             walk_time += step*speed_mult;
-            
-            // Start sliding if above threshold speed and slope 
-            float target_skate_amount = 0.0f;
-            if(slope_vec[1] < -0.5f && math.abs(effective_vel[0]) > 3.0f){
-                target_skate_amount = 1.0f;
-            }
-            skate_amount = MoveTowardsF(skate_amount, target_skate_amount, step*3.0f);
-            if(debug_info.force_skate){
-                skate_amount = 1.0f;
-            }
-            quad_amount = math.lerp(quad_amount,0.0f,skate_amount);
 
             // Compress body during quadruped gallop
-            walk.body_compress_amount = math.lerp((math.sin((walk_time+quad_gallop_body_compress_offset) * math.PI * 2.0f)+1.0f)*quad_gallop_body_compress_amount*quad_amount*gallop_amount,
-                                                  0.1f,
-                                                  skate_amount);
+            walk.body_compress_amount = 0.0f;
 
             // Adjust COM height based on gait
             var target_com = simple_pos;
             target_com[1] = smoothed_pos[1];
             var walk_height = base_walk_height + math.sin((walk_time+0.25f) * math.PI * 4.0f) * math.abs(effective_vel[0]) * 0.015f / speed_mult + math.abs(effective_vel[0])*0.01f;
-            var gallop_height_ = math.sin((walk_time + gallop_height_offset) * math.PI * 2.0f) * gallop_height * math.abs(effective_vel[0]) + gallop_height_base * (0.5f + math.min(0.5f, math.abs(effective_vel[0])*0.1f));
-            target_com[1] += math.lerp(walk_height, gallop_height_, gallop_amount);
-            target_com[1] = math.lerp(target_com[1], simple_pos[1] + 0.5f, skate_amount);
+            target_com[1] += walk_height;
             target_com[1] = math.lerp(target_com[1], simple_pos[1], math.abs(lean)*0.15f);
 
             // Get ground slope again for use later
@@ -760,27 +688,6 @@ public class GibbonControl : MonoBehaviour {
 
             {
                 var rig = walk.simple_rig;
-                
-                // Apply quadruped run effect to arms
-                if(gallop_amount * quad_amount > 0.0f){
-                    for(int i=0; i<2; ++i){
-                        // Get target position for hand
-                        walk.limb_targets[i] = rig.points[i*2].pos;
-                        walk.limb_targets[i][1] = BranchesHeight(display.limb_targets[i][0]);
-                        float time_val = walk_time * math.PI * 2.0f;
-                        walk.limb_targets[i][1] += (-math.sin(time_val) + 0.5f)*gallop_arm_stride_height;
-                        walk.limb_targets[i] += move_dir * (math.cos(time_val)+0.5f)*gallop_arm_stride * effective_vel[0] / speed_mult;
-
-                        // Move hand towards target
-                        float pull_strength = gallop_amount * quad_amount * math.min(1.0f, math.abs(effective_vel[0]) * 0.2f);
-                        rig.points[i*2+1].pos = MoveTowardsVec(rig.points[i*2+1].pos, walk.limb_targets[i], step * 0.5f * pull_strength * 4f);
-                    
-                        if(debug_info.draw_hand_pull){
-                            DebugDraw.Line(rig.points[i*2+1].pos, walk.limb_targets[i], new Color((i==0)?1f:0f,(i==0)?0f:1f,0f,pull_strength), DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray );
-                            DebugDraw.Sphere(walk.limb_targets[i], new Color((i==0)?1f:0f,(i==0)?0f:1f,0f,1.0f), Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray );
-                        }
-                    }
-                }
 
                 rig.StartSim(step);
                 for(int j=0; j<4; ++j){
@@ -810,24 +717,23 @@ public class GibbonControl : MonoBehaviour {
                     rig.points[4].pos += step_sqrd * -top_force;
                     rig.points[0].pos += step_sqrd * top_force * 0.5f;
                     rig.points[2].pos += step_sqrd * top_force * 0.5f;
-                    rig.points[0].pos[2] -= step_sqrd * effective_vel[0] * 2.0f * (1.0f - skate_amount);
-                    rig.points[2].pos[2] += step_sqrd * effective_vel[0] * 2.0f * (1.0f - skate_amount);
+                    rig.points[0].pos[2] -= step_sqrd * effective_vel[0] * 2.0f;
+                    rig.points[2].pos[2] += step_sqrd * effective_vel[0] * 2.0f;
                     
                     // Add rotational force to body if needed
                     for(int i=0; i<2; ++i){
                         var walk_rotate = (math.cos((walk_time + tilt_offset) * math.PI * 2.0f + math.PI*i))*0.2f;
-                        var gallop_rotate = (math.cos(math.PI*i))*(gallop_hip_rotate * (1.0f - quad_amount));
-                        var rotate = math.lerp(walk_rotate, gallop_rotate, gallop_amount);
+                        var rotate = walk_rotate;
                         rig.points[i*2].pos[0] += step_sqrd * -3.0f * rotate * effective_vel[0] / speed_mult;
                     }
                     
                     // Move arms out to sides
                     float speed = math.abs(effective_vel[0])/max_speed;
                     for(int i=0; i<2; ++i){
-                        var arms_up = math.abs(speed * (math.sin(Time.time * ((i==1)?2.5f:2.3f))*0.3f+0.7f)) * (1.0f - gallop_amount);
+                        var arms_up = math.abs(speed * (math.sin(Time.time * ((i==1)?2.5f:2.3f))*0.3f+0.7f));
                         rig.points[1+i*2].pos += step_sqrd * (rig.points[0].pos - rig.points[2].pos) * (1.5f+speed*2.0f+arms_up*2.0f) * (1-i*2) * 2f;
                         rig.points[1+i*2].pos[1] += step_sqrd * 10.0f * arms_up  * arms_up;
-                        rig.bones[i].length[1] = rig.bones[0].length[0] / 0.4f * math.lerp((math.lerp(0.95f, 0.8f, math.min(speed*0.25f, 1.0f) + math.sin(arms_up * math.PI)*0.1f)),1.0f,gallop_amount);
+                        rig.bones[i].length[1] = rig.bones[0].length[0] / 0.4f * (math.lerp(0.95f, 0.8f, math.min(speed*0.25f, 1.0f) + math.sin(arms_up * math.PI)*0.1f));
                     }
                     
                     PreventHandsFromCrossingBody(rig);
@@ -848,12 +754,10 @@ public class GibbonControl : MonoBehaviour {
                     var offset = math.lerp(gallop_offset, quad_gallop_offset, quad_amount);
                     float time_val = walk_time * math.PI * 2.0f + math.PI*i*offset;
                     walk.limb_targets[2+i] = simple_pos;
-                    walk.limb_targets[2+i] += (move_dir * (math.cos(walk_time * math.PI * 2.0f + math.PI*i))*0.2f - 0.03f) * effective_vel[0] / speed_mult  * (1.0f - skate_amount) * (1.0f-gallop_amount);
-                    walk.limb_targets[2+i] += (move_dir * (math.cos(time_val))*0.2f - 0.03f) * effective_vel[0] / speed_mult  * (1.0f - skate_amount) * gallop_stride  * (1.0f - skate_amount) * gallop_amount;
-                    walk.limb_targets[2+i] += (rig.points[0].pos - rig.points[2].pos) * (1.0f-2.0f*i) * (0.3f+0.3f*skate_amount);
+                    walk.limb_targets[2+i] += (move_dir * (math.cos(walk_time * math.PI * 2.0f + math.PI*i))*0.2f - 0.03f) * effective_vel[0] / speed_mult;
+                    walk.limb_targets[2+i] += (rig.points[0].pos - rig.points[2].pos) * (1.0f-2.0f*i) * (0.3f);
                     walk.limb_targets[2+i][1] = BranchesHeight(walk.limb_targets[2+i][0]); 
-                    walk.limb_targets[2+i][1] += (-math.sin(walk_time * math.PI * 2.0f + math.PI*i) + 1.0f)*0.2f * (math.pow(math.abs(effective_vel[0]) + 1.0f, 0.3f) - 1.0f) * (1.0f - skate_amount) * (1.0f-gallop_amount);
-                    walk.limb_targets[2+i][1] += (-math.sin(time_val) + 1.0f)*gallop_stride_height * (math.pow(math.abs(effective_vel[0]) + 1.0f, 0.3f) - 1.0f) * (1.0f - skate_amount) * gallop_amount; 
+                    walk.limb_targets[2+i][1] += (-math.sin(walk_time * math.PI * 2.0f + math.PI*i) + 1.0f)*0.2f * (math.pow(math.abs(effective_vel[0]) + 1.0f, 0.3f) - 1.0f) * (1.0f);
                 }
             }
         } 
