@@ -294,8 +294,8 @@ public class GibbonControl : MonoBehaviour {
         for(int i=0; i<num_segments+1; ++i){
             branches.AddPoint(new float3(x,y,0), "branch");
             x += UnityEngine.Random.Range(2.0f, 6.0f);
-            y += UnityEngine.Random.Range(-3.0f, 3.0f);
-            y = math.clamp(y, -2.5f, 2.5f); // Make sure we stay on screen
+            //y += UnityEngine.Random.Range(-3.0f, 3.0f);
+            //y = math.clamp(y, -2.5f, 2.5f); // Make sure we stay on screen
         }
         for(int i=0; i<num_segments; ++i){
             branches.AddBone("branch", i, i+1);
@@ -922,6 +922,7 @@ public class GibbonControl : MonoBehaviour {
             com /= total_mass;
             // Track COM position
             cam_pos[0] = com[0] + simple_vel[0] * 0.1f;
+            cam_pos[1] = com[1];
             Camera.main.transform.position = cam_pos;
         }
 
