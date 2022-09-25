@@ -553,13 +553,6 @@ public class GibbonControl : MonoBehaviour {
         }
         display_gibbon.SetActive(debug_info.draw_gibbon);
 
-        if(ImGui.Begin("Animation Tuning")){
-            ImGui.TextWrapped("This is an example of a temporary UI window that could be used to tune animation parameters without having to recompile");
-            ImGui.SliderFloat("gallop_offset", ref gallop_offset, -1f, 1f);
-            ImGui.SliderFloat("quad_amount", ref quad_amount, 0f, 1f);
-        }
-        ImGui.End();
-
         debug_info.DrawWindow();
 
         if(Input.GetKeyDown(KeyCode.Tab)){
