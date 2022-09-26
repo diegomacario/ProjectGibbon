@@ -598,12 +598,11 @@ public class GibbonControl : MonoBehaviour {
     void Step(float step) {
         // Transform controls to axes
         float horz_input = 0f;
-        float vert_input = 0f;
         if(Input.GetKey(KeyCode.D)){
-            horz_input = 1f;
+            horz_input = 1f; // Move to the right (along the +X direction)
         }
         if(Input.GetKey(KeyCode.A)){
-            horz_input = -1f;
+            horz_input = -1f; // Move to the left (along the -X direction)
         }
 
         // Max speed of 7 m/s while running
@@ -615,10 +614,14 @@ public class GibbonControl : MonoBehaviour {
         
         // Don't allow speed < 1.0 m/s, don't need to worry about idle animations in an endless runner
         if(horz_input == 0f && math.abs(simple_vel[0]) < 1.0f){
-            simple_vel[0] = MoveTowardsF(simple_vel[0], simple_vel[0]>=0.0f?1.0f:-1.0f, step);
+            simple_vel[0] = MoveTowardsF(simple_vel[0], simple_vel[0] >= 0.0f ? 1.0f : -1.0f, step);
         }
 
-        // Smooth out position on branch by checking height forwards and back
+        // Smooth out vertical position on branch by checking height forwards and back
+        // Smoothing helps make the motion look good at the points where the slope of the terrain changes abruptly
+        // It makes the height of the character not match the height of the branches at those points
+        // In points like this one: /\ -> The height of the character is lower than the corner
+        // In points like this one: \/ -> the height of the character is higher than the corner
         var future_pos = simple_pos + simple_vel * 0.1f;
         future_pos[1] = BranchesHeight(future_pos[0]);
         var past_pos = simple_pos + simple_vel * -0.1f;
@@ -637,29 +640,34 @@ public class GibbonControl : MonoBehaviour {
         simple_vel[1] = 0.0f;
 
         // If on ground, look in the direction you are moving
+        // Here we calculate the forward vector of the chest's triangle
         var forward = math.normalize(math.cross(display.simple_rig.points[0].pos - display.simple_rig.points[2].pos, display.simple_rig.points[0].pos - display.simple_rig.points[4].pos));
-        look_target[2] += forward[2];
         look_target = (float3)display_body.head.transform.position + forward * 0.1f;
         look_target += future_pos - past_pos;
-        
+
         if(debug_info.draw_smoothing){
-            DebugDraw.Sphere(future_pos, Color.blue, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+            DebugDraw.Sphere(future_pos, Color.red, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
             DebugDraw.Sphere(past_pos, Color.blue, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
-            DebugDraw.Sphere(smoothed_pos, Color.green, Vector3.one * 0.2f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+            DebugDraw.Sphere(smoothed_pos, Color.green, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+            DebugDraw.Sphere(simple_pos, Color.yellow, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
             DebugDraw.Line(future_pos, smoothed_pos, Color.green, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
             DebugDraw.Line(past_pos, smoothed_pos, Color.green, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
         }
 
         { // Run animation
             // Vary between different gaits based on speed and time
-            quad_amount = math.clamp((math.sin(Time.time*2.3f)+math.sin(Time.time*1.7f)), 0.0f, 1.0f);
+            // y\ =\sin(x\cdot2.3)+\sin(x\cdot1.7)\ \left\{0<y\ <\ 1\right\}\ \left\{x\ >0\right\}
+            quad_amount = math.clamp((math.sin(Time.time * 2.3f) + math.sin(Time.time * 1.7f)), 0.0f, 1.0f);
 
             // Determine how far to lean forwards
-            var walk_lean = math.sin(Time.time)*0.2f+0.3f;
+            // y\ =\ \sin(x)*0.2+0.3\ \left\{x\ >0\right\}
+            var walk_lean = math.sin(Time.time) * 0.2f + 0.3f;
             var lean = walk_lean;
 
             // Adjust stride frequency based on speed
-            float speed_mult = 8f/(math.PI*2f) * math.pow((math.abs(effective_vel[0])+1.0f),0.4f);
+            // y\ =\ 8\ /\ (\pi\ *\ 2)\ *\ (\operatorname{abs}(x)+1.0)^{0.4}\ \left\{1\ <\ x\ <\ 7\right\}
+            float speed_mult = 8f / (math.PI * 2f) * math.pow((math.abs(effective_vel[0]) + 1.0f), 0.4f);
+            // When the character moves faster, we increase the walk_time faster
             walk_time += step*speed_mult;
 
             // Compress body during quadruped gallop
@@ -671,6 +679,11 @@ public class GibbonControl : MonoBehaviour {
             var walk_height = base_walk_height + math.sin((walk_time+0.25f) * math.PI * 4.0f) * math.abs(effective_vel[0]) * 0.015f / speed_mult + math.abs(effective_vel[0])*0.01f;
             target_com[1] += walk_height;
             target_com[1] = math.lerp(target_com[1], simple_pos[1], math.abs(lean)*0.15f);
+
+            if (debug_info.draw_smoothing)
+            {
+                DebugDraw.Sphere(target_com, Color.cyan, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+            }
 
             // Get ground slope again for use later
             var left = simple_pos - new float3(0.1f,0.0f,0.0f);
