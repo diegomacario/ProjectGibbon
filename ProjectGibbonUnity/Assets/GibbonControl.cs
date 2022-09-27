@@ -530,7 +530,8 @@ public class GibbonControl : MonoBehaviour {
             // Apply head transform
             display_body.head.transform.rotation = display_body.head.transform.rotation * Quaternion.AngleAxis(head_look_x, new Vector3(1.0f, 0.0f, 0.0f)) * Quaternion.AngleAxis(head_look_y, new Vector3(0.0f, 1.0f, 0.0f));
             if(head_look_y > 0.0f){
-                display_body.head.transform.position = display_body.head.transform.position + (Vector3)((display_body.head.transform.right) * head_look_y * -0.001f);
+                // It's important not to take the scale into account here, which is why we use TransformDirection instead of TransformVector
+                display_body.head.transform.position = display_body.head.transform.position + (Vector3)((display_body.head.transform.TransformDirection(new Vector3(1.0f, 0.0f, 0.0f))) * head_look_y * -0.001f);
             }
             
             if(debug_info.draw_head_look){
@@ -586,6 +587,8 @@ public class GibbonControl : MonoBehaviour {
     
     void PreventHandsFromCrossingBody(Verlet.System rig) {    
         for(int i=0; i<2; ++i){
+            // For the right hand this vector points from the left shoulder to the right shoulder
+            // For the left hand it points in the opposite direction
             var side_dir = math.normalize(rig.points[0].pos - rig.points[2].pos) * (1-i*2);
             float shoulder_d = math.dot(rig.points[i*2].pos, side_dir);
             float hand_d = math.dot(rig.points[i*2+1].pos, side_dir);
@@ -676,9 +679,14 @@ public class GibbonControl : MonoBehaviour {
             // Adjust COM height based on gait
             var target_com = simple_pos;
             target_com[1] = smoothed_pos[1];
-            var walk_height = base_walk_height + math.sin((walk_time+0.25f) * math.PI * 4.0f) * math.abs(effective_vel[0]) * 0.015f / speed_mult + math.abs(effective_vel[0])*0.01f;
+            // walk_height is what raises the COM from the floor. Notice how it draws a sine wave
+            var walk_height = base_walk_height + math.sin((walk_time+0.25f) * math.PI * 4.0f) * math.abs(effective_vel[0]) * 0.015f / speed_mult + math.abs(effective_vel[0]) * 0.01f;
             target_com[1] += walk_height;
+            // The target COM moves up and down. The lower it is (i.e. the closer it is to simple_pos), the more the character leans forward
+            //DebugDraw.Sphere(target_com, Color.red, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+            //DebugDraw.Sphere(simple_pos, Color.green, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
             target_com[1] = math.lerp(target_com[1], simple_pos[1], math.abs(lean)*0.15f);
+            //DebugDraw.Sphere(target_com, Color.blue, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
 
             if (debug_info.draw_smoothing)
             {
@@ -690,22 +698,32 @@ public class GibbonControl : MonoBehaviour {
             var right = simple_pos + new float3(0.1f,0.0f,0.0f);
             left[1] = BranchesHeight(left[0]);
             right[1] = BranchesHeight(right[0]);
+            // move_dir always points to the right (i.e. down the +X axis)
             float3 move_dir = math.normalize(right - left);
+            //DebugDraw.Line(simple_pos + new float3(0.0f, 0.5f, 0.0f), (simple_pos + new float3(0.0f, 0.5f, 0.0f)) + (move_dir), Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+            //DebugDraw.Sphere((simple_pos + new float3(0.0f, 0.5f, 0.0f)) + (move_dir), Color.red, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
 
-            {
+            { // Simulate the walk simple rig
                 var rig = walk.simple_rig;
 
+                // Apply gravity and velocity to all the points in the walk simple rig
                 rig.StartSim(step);
+
                 for(int j=0; j<4; ++j){
-                    // Adjust all free points to match target COM
+                    // Calculate the COM
                     float total_mass = 0f;
                     var com = float3.zero;
                     for(int i=0; i<rig.points.Count; ++i){
+                        // 1 is the right hand and 3 is the left hand
+                        // We don't want to consider those points when calculating the COM
+                        // We only consider the points that make up the chest's triangle (0 - right should, 2 - left shoulder and 4 - body)
                         if(i!=1 && i!=3){
                             com += rig.points[i].pos * rig.points[i].mass;
                             total_mass += rig.points[i].mass;
                         }
                     }
+
+                    // Adjust all free points to match target COM
                     com /= total_mass;
                     var offset = (float3)target_com - com;
                     for(int i=0; i<rig.points.Count; ++i){
@@ -717,28 +735,46 @@ public class GibbonControl : MonoBehaviour {
                     // Apply torque to keep torso upright and forward-facing
                     float step_sqrd = step*step;
                     float force = 20f;
+                    // Calculate the forward vector of the chest's triangle
                     var forward2 = math.normalize(math.cross(rig.points[0].pos - rig.points[2].pos, rig.points[0].pos - rig.points[4].pos));
                     var flat_forward = math.normalize(new float3(forward2[0],0,forward2[2]));
+                    // flat_foward is simply the forward vector of the chest's triangle with no Y component, so it's always perfectly aligned with the +X and -X axes
+                    // Multiplying flat_forward by lean causes the length of the vector to shrink when the character is upright, and to grow when the character is leaning
+                    // Adding (0, 1, 0) just makes the vector point upwards diagonally 
                     float3 top_force = (lean*flat_forward + new float3(0,1,0)) * force;
-                    rig.points[4].pos += step_sqrd * -top_force;
-                    rig.points[0].pos += step_sqrd * top_force * 0.5f;
-                    rig.points[2].pos += step_sqrd * top_force * 0.5f;
-                    rig.points[0].pos[2] -= step_sqrd * effective_vel[0] * 2.0f;
-                    rig.points[2].pos[2] += step_sqrd * effective_vel[0] * 2.0f;
+                    //DebugDraw.Line(simple_pos + new float3(0.0f, 0.5f, 0.0f), (simple_pos + new float3(0.0f, 0.5f, 0.0f)) + (flat_forward), Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+                    //DebugDraw.Line(simple_pos + new float3(0.0f, 0.5f, 0.0f), (simple_pos + new float3(0.0f, 0.5f, 0.0f)) + (lean * flat_forward), Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+                    //DebugDraw.Line(simple_pos + new float3(0.0f, 0.5f, 0.0f), (simple_pos + new float3(0.0f, 0.5f, 0.0f)) + (lean * flat_forward + new float3(0, 1, 0)), Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+                    //DebugDraw.Line(simple_pos + new float3(0.0f, 0.5f, 0.0f), (simple_pos + new float3(0.0f, 0.5f, 0.0f)) + (top_force), Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
+                    // These three lines are what keep the chest upright
+                    // The torque is carefully balanced here
+                    rig.points[4].pos += step_sqrd * -top_force;                 // Body
+                    rig.points[0].pos += step_sqrd * top_force * 0.5f;           // Right shoulder
+                    rig.points[2].pos += step_sqrd * top_force * 0.5f;           // Left shoulder
+                    // These two lines are what make the character look forward when it moves. Without them, the character walks sideways
+                    rig.points[0].pos[2] -= step_sqrd * effective_vel[0] * 2.0f; // Right shoulder
+                    rig.points[2].pos[2] += step_sqrd * effective_vel[0] * 2.0f; // Left shoulder
                     
                     // Add rotational force to body if needed
+                    // This is what makes the chest sway from side to side (i.e. rotate around the Z axis)
                     for(int i=0; i<2; ++i){
-                        var walk_rotate = (math.cos((walk_time + tilt_offset) * math.PI * 2.0f + math.PI*i))*0.2f;
+                        var walk_rotate = (math.cos((walk_time + tilt_offset) * math.PI * 2.0f + math.PI * i)) * 0.2f;
                         var rotate = walk_rotate;
+                        // Points 0 and 2 are modified here (right shoulder and left shoulder, respectively)
                         rig.points[i*2].pos[0] += step_sqrd * -3.0f * rotate * effective_vel[0] / speed_mult;
                     }
                     
                     // Move arms out to sides
-                    float speed = math.abs(effective_vel[0])/max_speed;
+                    float speed = math.abs(effective_vel[0]) / max_speed;
                     for(int i=0; i<2; ++i){
+                        // This is what causes the arms to flail
                         var arms_up = math.abs(speed * (math.sin(Time.time * ((i==1)?2.5f:2.3f))*0.3f+0.7f));
-                        rig.points[1+i*2].pos += step_sqrd * (rig.points[0].pos - rig.points[2].pos) * (1.5f+speed*2.0f+arms_up*2.0f) * (1-i*2) * 2f;
+                        // Points 1 and 3 are modified here (right hand and left hand, respectively)
+                        // They are moved along the vector that connects the shoulders (points 0 and 2)
+                        rig.points[1+i*2].pos += step_sqrd * (rig.points[0].pos - rig.points[2].pos) * (1.5f + speed * 2.0f + arms_up * 2.0f) * (1 - i * 2) * 2f;
                         rig.points[1+i*2].pos[1] += step_sqrd * 10.0f * arms_up  * arms_up;
+                        // Bone 0 is the right arm, while bone 1 is the left arm
+                        // Here we update the maximum length
                         rig.bones[i].length[1] = rig.bones[0].length[0] / 0.4f * (math.lerp(0.95f, 0.8f, math.min(speed*0.25f, 1.0f) + math.sin(arms_up * math.PI)*0.1f));
                     }
                     
@@ -746,6 +782,7 @@ public class GibbonControl : MonoBehaviour {
                     
                     // Make sure hands don't go through floor
                     for(int i=0; i<2; ++i){
+                        // Points 1 and 3 are modified here (right hand and left hand, respectively)
                         rig.points[i*2+1].pos[1] = math.max(rig.points[i*2+1].pos[1], BranchesHeight(rig.points[i*2+1].pos[0]));
                     }
                     
@@ -753,6 +790,7 @@ public class GibbonControl : MonoBehaviour {
                         rig.EnforceDistanceConstraints();
                     }
                 }
+
                 rig.EndSim();
                 
                 // Calculate leg targets
