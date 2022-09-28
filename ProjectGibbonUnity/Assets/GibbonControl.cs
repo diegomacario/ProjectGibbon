@@ -50,6 +50,10 @@ public class GibbonControl : MonoBehaviour {
     
     class MovementSystem {
         public float3 target_com;
+        // 0 is right hand
+        // 1 is left hand
+        // 2 is right foot
+        // 3 is left foot
         public float3[] limb_targets = new float3[4];
         public Verlet.System simple_rig = new Verlet.System();
         public float body_compress_amount = 0.0f;
@@ -593,7 +597,14 @@ public class GibbonControl : MonoBehaviour {
             float shoulder_d = math.dot(rig.points[i*2].pos, side_dir);
             float hand_d = math.dot(rig.points[i*2+1].pos, side_dir);
             float new_d = math.max(hand_d, shoulder_d);
+            //if (i == 0) { DebugDraw.Line(new float3(0.0f, 0.0f, 0.0f), side_dir, Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray); }
+            //if (i == 0) { DebugDraw.Line(new float3(0.0f, 0.0f, 0.0f), rig.points[i * 2].pos, Color.green, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray); }
+            //if (i == 0) { DebugDraw.Line(new float3(0.0f, 0.0f, 0.0f), rig.points[i * 2 + 1].pos, Color.blue, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray); }
+
+            //if (i == 0) { DebugDraw.Sphere(rig.points[i * 2 + 1].pos, Color.red, Vector3.one * 0.05f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray); }
+            //if (i == 0) { DebugDraw.Line(rig.points[i * 2 + 1].pos, rig.points[i * 2 + 1].pos + (new_d - hand_d) * side_dir * 5.0f, Color.red, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray); }
             rig.points[i*2+1].pos += (new_d - hand_d) * side_dir;
+            //if (i == 0) { DebugDraw.Sphere(rig.points[i * 2 + 1].pos, Color.green, Vector3.one * 0.05f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray); }
         }
     }
 
@@ -778,6 +789,8 @@ public class GibbonControl : MonoBehaviour {
                         rig.bones[i].length[1] = rig.bones[0].length[0] / 0.4f * (math.lerp(0.95f, 0.8f, math.min(speed*0.25f, 1.0f) + math.sin(arms_up * math.PI)*0.1f));
                     }
                     
+                    // This prevents the arms from colliding with the body and penetrating it when the character turns
+                    // TODO: I still don't understand the math behind this function
                     PreventHandsFromCrossingBody(rig);
                     
                     // Make sure hands don't go through floor
@@ -794,14 +807,22 @@ public class GibbonControl : MonoBehaviour {
                 rig.EndSim();
                 
                 // Calculate leg targets
+                // 2 is right foot
+                // 3 is left foot
                 for(int i=0; i<2; ++i){
                     var offset = math.lerp(gallop_offset, quad_gallop_offset, quad_amount);
                     float time_val = walk_time * math.PI * 2.0f + math.PI*i*offset;
                     walk.limb_targets[2+i] = simple_pos;
+                    // This vector points in the movement direction. Note how it's length depends on the effective velocity. That causes the strides to shorten or lengthen depending on the velocity of the character
                     walk.limb_targets[2+i] += (move_dir * (math.cos(walk_time * math.PI * 2.0f + math.PI*i))*0.2f - 0.03f) * effective_vel[0] / speed_mult;
+                    // This vector points from the left shoulder to the right shoulder for the right foot, and in the opposite direction for the left foot
                     walk.limb_targets[2+i] += (rig.points[0].pos - rig.points[2].pos) * (1.0f-2.0f*i) * (0.3f);
-                    walk.limb_targets[2+i][1] = BranchesHeight(walk.limb_targets[2+i][0]); 
+                    // The height of the target matches the height of the branch
+                    // It float aboves the ground in front and behind the character, and it sinks in the middle
+                    walk.limb_targets[2+i][1] = BranchesHeight(walk.limb_targets[2+i][0]);
                     walk.limb_targets[2+i][1] += (-math.sin(walk_time * math.PI * 2.0f + math.PI*i) + 1.0f)*0.2f * (math.pow(math.abs(effective_vel[0]) + 1.0f, 0.3f) - 1.0f) * (1.0f);
+
+                    //DebugDraw.Sphere(walk.limb_targets[2 + i], (i == 0) ? Color.green : Color.red, Vector3.one * 0.05f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
                 }
             }
         } 
@@ -822,6 +843,8 @@ public class GibbonControl : MonoBehaviour {
             }
 
             // Interpolate between source rigs
+            // Since we only support running right now, there is no interpolation
+            // The walk right is simply copied into the display rig
             for(int i=0; i<display.simple_rig.points.Count; ++i){
                 display.simple_rig.points[i].old_pos = display.simple_rig.points[i].pos;
                 display.simple_rig.points[i].pos = walk.simple_rig.points[i].pos;
