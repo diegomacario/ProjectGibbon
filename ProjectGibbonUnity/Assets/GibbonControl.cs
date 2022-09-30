@@ -377,17 +377,23 @@ public class GibbonControl : MonoBehaviour {
     }
     
     // Prepare to draw next frame
-    void Update() {        
+    void Update() {
+        // At this point the step function has already been called, so the display rig has been updated
+        // The point of the Update function is to update the complete rig and then the display_body
+
         { // Use "arms" rig to drive full body IK rig
             var points = display.simple_rig.points;
 
             // Calculate midpoint and orientation of body triangle
-            var bind_mid = (points[0].bind_pos + points[2].bind_pos + points[4].bind_pos) / 3.0f;
-            var mid      = (points[0].pos     +  points[2].pos      + points[4].pos)      / 3.0f;
+            // Center of chest's triangle
+            var bind_mid     = (points[0].bind_pos + points[2].bind_pos + points[4].bind_pos) / 3.0f;
+            var mid          = (points[0].pos     +  points[2].pos      + points[4].pos)      / 3.0f;
+            // Forward vector of chest's triangle
             var forward      = math.normalize(math.cross(points[0].pos      - points[2].pos,      points[0].pos      - points[4].pos));
             var bind_forward = math.normalize(math.cross(points[0].bind_pos - points[2].bind_pos, points[0].bind_pos - points[4].bind_pos));
-            var up      = math.normalize((points[0].pos      + points[2].pos)      / 2.0f - points[4].pos);
-            var bind_up = math.normalize((points[0].bind_pos + points[2].bind_pos) / 2.0f - points[4].bind_pos);
+            // Up vector that points from body to mid point between the shoulders
+            var up           = math.normalize((points[0].pos      + points[2].pos)      / 2.0f - points[4].pos);
+            var bind_up      = math.normalize((points[0].bind_pos + points[2].bind_pos) / 2.0f - points[4].bind_pos);
         
             // Copy hand and shoulder positions from simple rig
             for(int i=0; i<4; ++i){
@@ -395,8 +401,7 @@ public class GibbonControl : MonoBehaviour {
                 complete.points[i].pinned = true;
             }
             
-            var body_rotation = math.mul(quaternion.LookRotation(forward, up), 
-                                          math.inverse(quaternion.LookRotation(bind_forward, bind_up)));
+            var body_rotation = math.mul(quaternion.LookRotation(forward, up), math.inverse(quaternion.LookRotation(bind_forward, bind_up)));
 
             // Set up spine, head and leg positions based on body rotation
             for(int i=5; i<14; ++i){
