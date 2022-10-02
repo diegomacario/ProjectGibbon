@@ -289,6 +289,15 @@ public class GibbonControl : MonoBehaviour {
     }
 
     // Solve two bone IK problems
+    // Arguments when dealing with arms:
+    //     start_id = shoulder
+    //     end_id   = hand
+    //     forward actually points backwards
+    //     arm_ik   = original shoulder, elbow and grip positions
+    //     top      = visual bicep
+    //     bottom   = visual forearm
+    //     old_axis = elbow's bind space axis of rotation
+    //     axis     = elbow's world space axis of rotation
     static void ApplyTwoBoneIK(int start_id, 
                                int end_id, 
                                float3 forward, 
@@ -299,27 +308,43 @@ public class GibbonControl : MonoBehaviour {
                                float3 old_axis, 
                                float3 axis)
     {
-        var start = points[start_id];
-        var end = points[end_id];
+        var start = points[start_id]; // shoulder
+        var end = points[end_id];     // hand
             
         // Get sides of triangle formed by upper and lower limb
-        float dist_a =     math.distance(ik[0], ik[1]);
-        float dist_b =     math.distance(ik[1], ik[2]);
-        float dist_c =     math.distance(start.pos, end.pos);
-        float old_dist_c = math.distance(ik[0], ik[2]);
+        float dist_a =     math.distance(ik[0], ik[1]);       // Distance from bind shoulder to bind elbow
+        float dist_b =     math.distance(ik[1], ik[2]);       // Distance from bind elbow to bind grip
+        float dist_c =     math.distance(start.pos, end.pos); // Distance from complete.shoulder to complete.hand
+        float old_dist_c = math.distance(ik[0], ik[2]);       // Distance from bind shoulder to bind hand
+
+        // Note that dist_a and dist_b are always the same because of the length constraint between shoulder-elbow and elbow-hand
+        // The only distance that can change is the shoulder-hand distance
+        // That's why the computations below work
 
         // Get angles of triangle
-        var old_hinge_angle = GetAngleGivenSides(dist_a,     dist_b, old_dist_c);
-        var hinge_angle     = GetAngleGivenSides(dist_a,     dist_b, dist_c);
-        var old_base_angle  = GetAngleGivenSides(old_dist_c, dist_a, dist_b);
-        var base_angle      = GetAngleGivenSides(dist_c,     dist_a, dist_b);
+        /*
+                           /* <- shoulder
+                          /Y|
+             dist_a ->   /  |
+                        /   |
+             elbow  -> *X   | <- dist_c
+                        \   |
+             dist_b ->   \  |
+                          \ |
+                           \* <- hand
+
+             X = hinge angle
+             Y = base angle
+        */
+        var old_hinge_angle = GetAngleGivenSides(dist_a,     dist_b, old_dist_c); // Bind angle between bicep and forearm
+        var hinge_angle     = GetAngleGivenSides(dist_a,     dist_b, dist_c);     // Angle between bicep and forearm
+        var old_base_angle  = GetAngleGivenSides(old_dist_c, dist_a, dist_b);     // Bind angle between bicep and shoulder-hand line
+        var base_angle      = GetAngleGivenSides(dist_c,     dist_a, dist_b);     // Angle between bicep and shoulder-hand line
 
         // Apply rotation of entire arm (shoulder->hand)
-        var base_rotation = Quaternion.LookRotation(end.pos - start.pos, forward) * 
-                            Quaternion.Inverse(Quaternion.LookRotation(end.bind_pos - start.bind_pos, Vector3.forward));
+        var base_rotation = Quaternion.LookRotation(end.pos - start.pos, forward) * Quaternion.Inverse(Quaternion.LookRotation(end.bind_pos - start.bind_pos, Vector3.forward));
         // Apply additional rotation from IK
-        base_rotation = Quaternion.AngleAxis(base_angle * Mathf.Rad2Deg, axis) * base_rotation * 
-                        Quaternion.Inverse(Quaternion.AngleAxis(old_base_angle * Mathf.Rad2Deg, old_axis));
+        base_rotation = Quaternion.AngleAxis(base_angle * Mathf.Rad2Deg, axis) * base_rotation * Quaternion.Inverse(Quaternion.AngleAxis(old_base_angle * Mathf.Rad2Deg, old_axis));
             
         // Apply base and hinge rotations to actual display bones
         top.transform.position = top.bind_pos + (start.pos - start.bind_pos);
@@ -327,20 +352,25 @@ public class GibbonControl : MonoBehaviour {
         
         bottom.transform.position = top.transform.position + top.transform.rotation * Quaternion.Inverse(top.bind_rot) * (bottom.bind_pos - top.bind_pos);
         bottom.transform.rotation = Quaternion.AngleAxis(hinge_angle * Mathf.Rad2Deg, axis) * base_rotation * 
-                                    Quaternion.Inverse(Quaternion.AngleAxis(old_hinge_angle * Mathf.Rad2Deg, old_axis)) * bottom.bind_rot;        
+                                    Quaternion.Inverse(Quaternion.AngleAxis(old_hinge_angle * Mathf.Rad2Deg, old_axis)) * bottom.bind_rot;
     }
-    
+
     // Calculate bone transform that matches orientation of top and bottom points, and looks in the character "forward" direction
+    // start = top point
+    // end   = bottom point
     void ApplyBound(DisplayBone part, float3 forward, float3 bind_forward, int start, int end){
-        // Get midpoint and "up" direction (from start to end point)
-        var up      = math.normalize(complete.points[end].pos       - complete.points[start].pos);
-        var bind_up = math.normalize(complete.points[end].bind_pos  - complete.points[start].bind_pos);       
-        var mid      = (complete.points[end].pos       + complete.points[start].pos)     / 2.0f;
+        // Get mid point and "up" direction (from start to end point)
+        // The "up" direction actually points down, since it goes from start (top) to end (bottom)
+        // I think that's why the forward and bind_forward directions that this function receives are negated
+        var up       = math.normalize(complete.points[end].pos      - complete.points[start].pos);
+        var bind_up  = math.normalize(complete.points[end].bind_pos - complete.points[start].bind_pos);
+        var mid      = (complete.points[end].pos      + complete.points[start].pos)      / 2.0f;
         var bind_mid = (complete.points[end].bind_pos + complete.points[start].bind_pos) / 2.0f;
-        
+
         // Apply rotations
-        var rotation = Quaternion.LookRotation(up, forward) * 
-                       Quaternion.Inverse(Quaternion.LookRotation(bind_up, bind_forward));
+        // This quaternion has the same purpose as body_rotation
+        // This code is actually the same as the code in the beginning of the Update function
+        var rotation = Quaternion.LookRotation(up, forward) * Quaternion.Inverse(Quaternion.LookRotation(bind_up, bind_forward));
         part.transform.rotation = rotation * part.bind_rot;
         part.transform.position = mid + (float3)(rotation * (part.bind_pos - bind_mid));
     }
@@ -381,6 +411,7 @@ public class GibbonControl : MonoBehaviour {
         // At this point the step function has already been called, so the display rig has been updated
         // The point of the Update function is to update the complete rig and then the display_body
 
+        // Here we update the complete rig using the simple rig
         { // Use "arms" rig to drive full body IK rig
             var points = display.simple_rig.points;
 
@@ -457,56 +488,94 @@ public class GibbonControl : MonoBehaviour {
                 complete.EnforceDistanceConstraints();
             }
         }
-        
+
+        // Here we update the display_body using the complete rig
         { // Apply full body IK rig to visual deformation bones
             var points = complete.points;
 
             // Get torso orientation and position
-            var bind_mid = (points[0].bind_pos + points[2].bind_pos + points[9].bind_pos) / 3.0f;
-            var mid      = (points[0].pos      + points[2].pos      + points[9].pos)      / 3.0f;
+            // Note that here we are working with the complete rig, not the simple rig
+            // 0 = right shoulder
+            // 2 = left shoulder
+            // 9 = groin
+            // Center of torso
+            var bind_mid     = (points[0].bind_pos + points[2].bind_pos + points[9].bind_pos) / 3.0f;
+            var mid          = (points[0].pos      + points[2].pos      + points[9].pos)      / 3.0f;
+            // Forward vector of torso negated, so it points backwards
             var forward      = -math.normalize(math.cross(points[0].pos      - points[2].pos,      points[0].pos -      points[9].pos));
             var bind_forward = -math.normalize(math.cross(points[0].bind_pos - points[2].bind_pos, points[0].bind_pos - points[9].bind_pos));
-            var up =      math.normalize((points[0].pos      + points[2].pos)/2.0f      - points[9].pos);
-            var bind_up = math.normalize((points[0].bind_pos + points[2].bind_pos)/2.0f - points[9].bind_pos);
+            // Up vector that points from groin to mid point between the shoulders
+            var up           = math.normalize((points[0].pos      + points[2].pos)/2.0f      - points[9].pos);
+            var bind_up      = math.normalize((points[0].bind_pos + points[2].bind_pos)/2.0f - points[9].bind_pos);
         
             // Apply core bones
+            // 5 = head
+            // 6 = neck
             ApplyBound(display_body.head, forward, bind_forward, 5, 6);
+            // 6 = neck
+            // 7 = stomach
             ApplyBound(display_body.chest, forward, bind_forward, 6, 7);
+            // 7 = stomach
+            // 8 = pelvis (hip)
             ApplyBound(display_body.belly, forward, bind_forward, 7, 8);
+            // 8 = pelvis (hip)
+            // 9 = groin
             ApplyBound(display_body.pelvis, forward, bind_forward, 8, 9);
 
             // Arm IK
-            for(int i=0; i<2; ++i){
-                var top = display_body.arm_top_r;
-                var bottom = display_body.arm_bottom_r;
-                if(i==1){
-                    top = display_body.arm_top_l;
-                    bottom = display_body.arm_bottom_l;
+            for(int i=0; i<2; ++i)
+            {
+                var top = display_body.arm_top_r; // Bicep
+                var bottom = display_body.arm_bottom_r; // Forearm
+                if (i==1)
+                {
+                    top = display_body.arm_top_l; // Bicep
+                    bottom = display_body.arm_bottom_l; // Forearm
                 }
 
-                int start_id = i*2;
-                int end_id = i*2+1;
-                var start = points[start_id];
-                var end = points[end_id];
+                // 0 = right shoulder
+                // 1 = right hand
+                // 2 = left shoulder
+                // 3 = left hand
+                int start_id = i * 2;            // Shoulder
+                int end_id   = i * 2 + 1;        // Hand
+                var start    = points[start_id]; // Shoulder point
+                var end      = points[end_id];   // Hand point
 
                 // Adjust elbow target position
                 float ik_driver = 1.0f;
                 var ik_forward_amount = -ik_driver * 0.8f;
                 var ik_up_amount = 0.1f + ik_driver * 0.5f;
+                // Start at mid point between the shoulders, move up by ik_up_amount and move forward by ik_forward_amount
                 var elbow_point      = ((points[2].pos      + points[0].pos)      * 0.5f + up      * ik_up_amount + forward      * ik_forward_amount);
                 var bind_elbow_point = ((points[2].bind_pos + points[0].bind_pos) * 0.5f + bind_up * ik_up_amount + bind_forward * ik_forward_amount);
-                
-                if(debug_info.draw_elbow_ik_target){
+
+                if(debug_info.draw_elbow_ik_target)
+                {
                     DebugDraw.Line((start.pos + end.pos) * 0.5f, elbow_point, Color.red, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
                     DebugDraw.Sphere(elbow_point, Color.red, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
                 }
-                
+
+                // ((mid point between hand and shoulder) - elbow IK target) cross (shoulder - hand)
+                // This looks to me like the axis of rotation of the elbow
+                // It points outwards from the body (remember to use your left hand when computing cross products in a left-handed coordinate system like Unity's)
+                // old_axis is bind space
+                // axis is world space
                 var old_axis = math.normalize(math.cross((end.bind_pos + start.bind_pos) * 0.5f - bind_elbow_point, start.bind_pos - end.bind_pos));
                 var axis     = math.normalize(math.cross((end.pos      + start.pos)      * 0.5f - elbow_point,      start.pos      - end.pos));
-            
+
+                // start_id = shoulder
+                // end_id   = hand
+                // forward actually points backwards
+                // arm_ik   = original shoulder, elbow and grip positions
+                // top      = visual bicep
+                // bottom   = visual forearm
+                // old_axis = elbow's bind space axis of rotation
+                // axis     = elbow's world space axis of rotation
                 ApplyTwoBoneIK(start_id, end_id, forward, arm_ik, top, bottom, complete.points, old_axis, axis);
                 
-                if(debug_info.draw_ik_final){
+                if(debug_info.draw_ik_final)
+                {
                     DebugDraw.Line(points[start_id].pos, bottom.transform.position, Color.white, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
                     DebugDraw.Line(points[end_id].pos, bottom.transform.position, Color.white, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
                 }
