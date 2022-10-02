@@ -400,25 +400,49 @@ public class GibbonControl : MonoBehaviour {
                 complete.points[i].pos = points[i].pos;
                 complete.points[i].pinned = true;
             }
-            
+
+            // Starting with a simple rig (a triangle with two sticks for the arms),
+            // we want to create a complete rig (a spine with two sticks for the arms and two sticks for the legs)
+            // The strategy is the following: move the mid point of chest's triangle along (bind_pos[i] - bind_mid) for every point in the complete rig
+            // and rotate those vectors to match the orientation of the chest's triangle
+
+            // body_rotation is the quaternion that rotates (bind_pos[i] - bind_mid) so that it has the orientation of the chest's triangle
+            // I see it as transforming the vector to the inverse bind space, and then back to world space with the chest's orientation
+            // lookRot(fwd, up) * lookRot(bindFwd, bindUp)^-1 * bindVec
             var body_rotation = math.mul(quaternion.LookRotation(forward, up), math.inverse(quaternion.LookRotation(bind_forward, bind_up)));
 
             // Set up spine, head and leg positions based on body rotation
+            // 5  = head
+            // 6  = neck
+            // 7  = stomach
+            // 8  = pelvis (hip)
+            // 9  = groin
+            // 10 = hip right
+            // 11 = foot right
+            // 12 = hip left
+            // 13 = foot left
             for(int i=5; i<14; ++i){
                 complete.points[i].pos = mid + math.mul(body_rotation, (complete.points[i].bind_pos - bind_mid));
                 complete.points[i].pinned = true;
             }
             
             // Apply body compression
+            // 7 = stomach
+            // 8 = pelvis (hip)
+            // 9 = groin
             complete.points[7].pinned = false;
             complete.points[8].pinned = false;
-            var old_hip = complete.points[9].pos;
+            var old_hip = complete.points[9].pos; // This should be called old_groin
             for(int i=7; i<=9; ++i){
+                // Lerp between points 7, 8 and 9 and point 6, which is the neck
+                // The higher the body compression, the closer points 7, 8 and 9 are to the neck
                 complete.points[i].pos = math.lerp(complete.points[i].pos, complete.points[6].pos, body_compress_amount);
             }
+            // Move the stomach and the pelvis (hip) back
             complete.points[7].pos -= forward * body_compress_amount * 0.2f;
             complete.points[8].pos -= forward * body_compress_amount * 0.2f;
-            
+
+            // Move the legs towards the new position of the groin
             for(int i=10; i<14; ++i){
                 complete.points[i].pos += complete.points[9].pos - old_hip;
             }
