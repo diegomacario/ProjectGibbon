@@ -342,17 +342,22 @@ public class GibbonControl : MonoBehaviour {
         var base_angle      = GetAngleGivenSides(dist_c,     dist_a, dist_b);     // Angle between bicep and shoulder-hand line
 
         // Apply rotation of entire arm (shoulder->hand)
+        // With only this rotation the arms are stiff (i.e. they rotate around the shoulder, but they don't bend at the elbows)
+        // (end.pos - start.pos) = (hand - shoulder) = points downwards
+        // forward points backwards
         var base_rotation = Quaternion.LookRotation(end.pos - start.pos, forward) * Quaternion.Inverse(Quaternion.LookRotation(end.bind_pos - start.bind_pos, Vector3.forward));
         // Apply additional rotation from IK
         base_rotation = Quaternion.AngleAxis(base_angle * Mathf.Rad2Deg, axis) * base_rotation * Quaternion.Inverse(Quaternion.AngleAxis(old_base_angle * Mathf.Rad2Deg, old_axis));
-            
+
         // Apply base and hinge rotations to actual display bones
+        // bind_bicep + (shoulder - bind_shoulder) = move bicep into position below the shoulder
         top.transform.position = top.bind_pos + (start.pos - start.bind_pos);
+        // orient the bicep
         top.transform.rotation = base_rotation * top.bind_rot;
-        
+
+        // Move forearm into position below the arm
         bottom.transform.position = top.transform.position + top.transform.rotation * Quaternion.Inverse(top.bind_rot) * (bottom.bind_pos - top.bind_pos);
-        bottom.transform.rotation = Quaternion.AngleAxis(hinge_angle * Mathf.Rad2Deg, axis) * base_rotation * 
-                                    Quaternion.Inverse(Quaternion.AngleAxis(old_hinge_angle * Mathf.Rad2Deg, old_axis)) * bottom.bind_rot;
+        bottom.transform.rotation = Quaternion.AngleAxis(hinge_angle * Mathf.Rad2Deg, axis) * base_rotation * Quaternion.Inverse(Quaternion.AngleAxis(old_hinge_angle * Mathf.Rad2Deg, old_axis)) * bottom.bind_rot;
     }
 
     // Calculate bone transform that matches orientation of top and bottom points, and looks in the character "forward" direction
@@ -434,7 +439,7 @@ public class GibbonControl : MonoBehaviour {
 
             // Starting with a simple rig (a triangle with two sticks for the arms),
             // we want to create a complete rig (a spine with two sticks for the arms and two sticks for the legs)
-            // The strategy is the following: move the mid point of chest's triangle along (bind_pos[i] - bind_mid) for every point in the complete rig
+            // The strategy is the following: move the mid point of the chest's triangle along (bind_pos[i] - bind_mid) for every point in the complete rig
             // and rotate those vectors to match the orientation of the chest's triangle
 
             // body_rotation is the quaternion that rotates (bind_pos[i] - bind_mid) so that it has the orientation of the chest's triangle
@@ -583,26 +588,32 @@ public class GibbonControl : MonoBehaviour {
 
             // Leg IK
             for(int i=0; i<2; ++i){
-                var top = display_body.leg_top_r;
-                var bottom = display_body.leg_bottom_r;
+                var top = display_body.leg_top_r; // Thigh
+                var bottom = display_body.leg_bottom_r; // Calf
                 if(i==1){
-                    top = display_body.leg_top_l;
-                    bottom = display_body.leg_bottom_l;
+                    top = display_body.leg_top_l; // Thigh
+                    bottom = display_body.leg_bottom_l; // Calf
                 }
-            
-                int start = i*2+10;
-                int end = i*2+1+10;
 
+                // 10 = right hip
+                // 11 = right foot
+                // 12 = left hip
+                // 13 = left foot
+                int start = i*2+10; // Hip
+                int end = i*2+1+10; // Foot
+
+                // Points downwards from hip to foot
                 var leg_dir = points[end].pos - points[start].pos;
 
                 // Get knee direction
                 var leg_dir_flat = math.normalize(new float2(math.dot(leg_dir, forward), math.dot(leg_dir, up)));
                 var leg_forward = leg_dir_flat[0] * up + leg_dir_flat[1] * -forward;
-                
+                DebugDraw.Line(mid, mid + leg_forward, Color.white, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
+
                 // Get base whole-leg rotation
                 var bind_rotation = Quaternion.LookRotation(points[end].bind_pos - points[start].bind_pos, Vector3.forward);
                 var rotation = Quaternion.LookRotation(leg_dir, leg_forward) * bind_rotation;
-        
+
                 // Get knee bend axis
                 var old_axis = bind_rotation * Vector3.right;
                 var axis = rotation * Vector3.right;
@@ -615,7 +626,7 @@ public class GibbonControl : MonoBehaviour {
                 }
             }
 
-            // Head look            
+            // Head look
             // head_look_y: 50 = max look down, -70 = max look up
             // head_look_x: -90 to 90
 
