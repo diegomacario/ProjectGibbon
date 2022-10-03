@@ -404,13 +404,13 @@ public class GibbonControl : MonoBehaviour {
         }
     }
 
-    static void DrawSystem(MovementSystem system, Color color) {    
+    static void DrawSystem(MovementSystem system, Color color) {
         system.simple_rig.DrawBones(color); 
         for(int i=2; i<4; ++i){
             DebugDraw.Sphere(system.limb_targets[i], color, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
-        }            
+        }
     }
-    
+
     // Prepare to draw next frame
     void Update() {
         // At this point the step function has already been called, so the display rig has been updated
@@ -608,7 +608,7 @@ public class GibbonControl : MonoBehaviour {
                 // Get knee direction
                 var leg_dir_flat = math.normalize(new float2(math.dot(leg_dir, forward), math.dot(leg_dir, up)));
                 var leg_forward = leg_dir_flat[0] * up + leg_dir_flat[1] * -forward;
-                DebugDraw.Line(mid, mid + leg_forward, Color.white, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
+                //DebugDraw.Line(mid, mid + leg_forward, Color.white, DebugDraw.Lifetime.OneFrame, DebugDraw.Type.Xray);
 
                 // Get base whole-leg rotation
                 var bind_rotation = Quaternion.LookRotation(points[end].bind_pos - points[start].bind_pos, Vector3.forward);
