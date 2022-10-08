@@ -920,10 +920,9 @@ public class GibbonControl : MonoBehaviour {
                 // 3 is left foot
                 for(int i=0; i<2; ++i){
                     var offset = math.lerp(gallop_offset, quad_gallop_offset, quad_amount);
-                    float time_val = walk_time * math.PI * 2.0f + math.PI*i*offset;
                     walk.limb_targets[2+i] = simple_pos;
                     // This vector points in the movement direction. Note how it's length depends on the effective velocity. That causes the strides to shorten or lengthen depending on the velocity of the character
-                    walk.limb_targets[2+i] += (move_dir * (math.cos(walk_time * math.PI * 2.0f + math.PI*i))*0.2f - 0.03f) * effective_vel[0] / speed_mult;
+                    walk.limb_targets[2+i] += (move_dir * (math.cos(walk_time * math.PI * 2.0f + math.PI*i))*0.2f) * effective_vel[0] / speed_mult;
                     // This vector points from the left shoulder to the right shoulder for the right foot, and in the opposite direction for the left foot
                     walk.limb_targets[2+i] += (rig.points[0].pos - rig.points[2].pos) * (1.0f-2.0f*i) * (0.3f);
                     // The height of the target matches the height of the branch
@@ -988,9 +987,9 @@ public class GibbonControl : MonoBehaviour {
             DebugDraw.Sphere(simple_pos, Color.yellow, Vector3.one * 0.1f, Quaternion.identity, DebugDraw.Lifetime.OneFixedUpdate, DebugDraw.Type.Xray);
         }
 
-        // Move game camera to track character       
+        // Move game camera to track character
         {
-            var cam_pos = Camera.main.transform.position; 
+            var cam_pos = Camera.main.transform.position;
             // Get COM
             float total_mass = 0.0f;
             var com = new float3(0.0f, 0.0f, 0.0f);
